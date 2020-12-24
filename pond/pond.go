@@ -145,7 +145,7 @@ func (p *Pool) close() {
 // Close close pool graceful
 func (p *Pool) Close() {
 
-	if p.getState() == STOPED { // 如果已经关闭, 不能重复关闭
+	if p.getState() == STOPED {
 		return
 	}
 
