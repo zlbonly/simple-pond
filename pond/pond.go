@@ -77,7 +77,8 @@ func (p *Pool) Put(task *Task) error {
 
 	// safe run worker
 	p.Lock()
-	if p.GetRunningWorkers() < p.GetCap() {
+	if p.GetRunningWorkers() < p.GetCap() { // 如果任务池满，则不再创建worker
+		// 创建启动一个worker
 		p.run()
 	}
 	p.Unlock()
@@ -85,10 +86,9 @@ func (p *Pool) Put(task *Task) error {
 	// send task safe
 	p.Lock()
 	if p.state == RUNNING {
-		p.taskC <- task
+		p.taskC <- task // 安全的推送任务, 以防在推送任务到 taskC 时 state 改变而关闭了 taskC
 	}
 	p.Unlock()
-
 	return nil
 }
 
@@ -97,7 +97,7 @@ func (p *Pool) run() {
 
 	go func() {
 		defer func() {
-			p.decRunning()
+			p.decRunning() // worker结束，运行中任务减1
 			if r := recover(); r != nil {
 				if p.PanicHandler != nil {
 					p.PanicHandler(r)
@@ -108,11 +108,12 @@ func (p *Pool) run() {
 		}()
 
 		for {
-			select {
-			case task, ok := <-p.taskC:
-				if !ok {
+			select { // 阻塞等待任务，结束信号到来
+			case task, ok := <-p.taskC: // 从 channel中 消费任务
+				if !ok { // 如果channel被关闭，结束worker运行
 					return
 				}
+				// 执行任务
 				task.Handler(task.Params...)
 			}
 		}
@@ -144,15 +145,15 @@ func (p *Pool) close() {
 // Close close pool graceful
 func (p *Pool) Close() {
 
-	if p.getState() == STOPED {
+	if p.getState() == STOPED { // 如果已经关闭, 不能重复关闭
 		return
 	}
 
 	p.setState(STOPED) // stop put task
 
-	for len(p.taskC) > 0 { // wait all task be consumed
+	for len(p.taskC) > 0 { // wait all task be consumed // 阻塞等待所有任务被 worker 消费
 		time.Sleep(1e6) // reduce CPU load
 	}
 
-	p.close()
+	p.close() // // 关闭任务队列
 }
